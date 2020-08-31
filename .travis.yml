@@ -1,0 +1,49 @@
+sudo: required
+
+services:
+  - docker
+
+language: python
+
+python:
+  - '2.7'
+
+env:
+  global:
+    - GITHUB_REPO="zhaoqin-github/f5-openstack-lbaasv2-bigiq-agent"
+    - PKG_NAME="f5-openstack-lbaasv2-bigiq-agent"
+    - PKG_VERSION=$(python -c "import f5_lbaasv2_bigiq_agent; print f5_lbaasv2_bigiq_agent.__version__")
+    - BUILD_NUMBER=${TRAVIS_BUILD_ID}
+    - DIST_REPO="dist"
+    - BUILD_CONTAINER=${PKG_NAME}-builder
+    - BUILD_DIR="/${PKG_NAME}-build"
+
+install:
+  - pip install flake8
+
+script:
+  - flake8 f5_lbaasv2_bigiq_agent
+
+after_success:
+  - docker build -t ${BUILD_CONTAINER} docker
+  - docker run --privileged --rm -v $(pwd):${BUILD_DIR} ${BUILD_CONTAINER} /bin/bash -e ${BUILD_DIR}/scripts/build.sh -d ${BUILD_DIR} -n ${BUILD_NUMBER}
+
+before_deploy:
+  # Set a local tag to deploy dev build
+  - git config --local user.name "Qin Zhao"
+  - git config --local user.email "q.zhao@f5.com"
+  - TAG="travis-${BUILD_NUMBER}"
+  - git tag ${TAG}
+
+deploy:
+  - provider: releases
+    edge: true
+    api_key: ${GITHUB_TOKEN}
+    file:
+      - ${DIST_REPO}/${PKG_NAME}-${PKG_VERSION}-${BUILD_NUMBER}.noarch.rpm
+    skip_cleanup: true
+    draft: true
+    name: "Travis-${BUILD_NUMBER}"
+    release_notes: "[Travis CI build ${TRAVIS_BUILD_ID}](https://travis-ci.com/github/${GITHUB_REPO}/builds/${TRAVIS_BUILD_ID})"
+    on:
+      repo: ${GITHUB_REPO}
