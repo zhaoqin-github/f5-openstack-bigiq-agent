@@ -12,7 +12,6 @@ env:
   global:
     - GITHUB_REPO="zhaoqin-github/f5-openstack-lbaasv2-bigiq-agent"
     - PKG_NAME="f5-openstack-lbaasv2-bigiq-agent"
-    - PKG_VERSION=$(python -c "import f5_lbaasv2_bigiq_agent; print f5_lbaasv2_bigiq_agent.__version__")
     - BUILD_NUMBER=${TRAVIS_BUILD_ID}
     - DIST_REPO="dist"
     - BUILD_CONTAINER=${PKG_NAME}-builder
@@ -20,6 +19,8 @@ env:
 
 install:
   - pip install flake8
+  - pip install -r requirements.txt
+  - PKG_VERSION=$(python -c "import f5_lbaasv2_bigiq_agent; print f5_lbaasv2_bigiq_agent.__version__")
 
 script:
   - flake8 f5_lbaasv2_bigiq_agent
