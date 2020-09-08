@@ -1,0 +1,4 @@
+include README.rst
+include etc/neutron/services/f5/f5-lbaasv2-bigiq-agent.conf
+include lib/systemd/system/f5-lbaasv2-bigiq-agent.service
+include etc/init.d/f5-lbaasv2-bigiq-agent
