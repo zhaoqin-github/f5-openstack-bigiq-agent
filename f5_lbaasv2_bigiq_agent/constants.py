@@ -6,6 +6,8 @@ TOPIC_LBAASV2_BIGIQ_DRIVER = "f5-lbaasv2-bigiq-driver"
 
 TOPIC_LBAASV2_BIGIQ_AGENT = "f5-lbaasv2-bigiq-agent"
 
+RPC_API_VERSION = '1.0'
+
 # Provisioning Status
 ACTIVE = 'ACTIVE'
 PENDING_CREATE = "PENDING_CREATE"
