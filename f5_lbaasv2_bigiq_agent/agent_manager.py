@@ -33,7 +33,7 @@ OPTS = [
     ),
     cfg.StrOpt(
         'agent_id',
-        default='12345678',
+        default=None,
         help=('Static agent ID to use with Neutron')
     ),
     cfg.StrOpt(
@@ -60,7 +60,7 @@ class F5BIGIQAgentManager(periodic_task.PeriodicTasks):
         self.context = ncontext.get_admin_context_without_session()
         self.serializer = None
 
-        self.agent_host = self.conf.agent_id
+        self.agent_host = self.conf.host + ":" + self.conf.agent_id
 
         global PERIODIC_TASK_INTERVAL
         PERIODIC_TASK_INTERVAL = self.conf.periodic_interval
@@ -75,7 +75,7 @@ class F5BIGIQAgentManager(periodic_task.PeriodicTasks):
 
         self.agent_state = {
             'binary': constants.AGENT_BINARY_NAME,
-            'host': self.conf.agent_id,
+            'host': self.agent_host,
             'topic': constants.TOPIC_LBAASV2_BIGIQ_AGENT,
             'agent_type': constants.LBAASV2_BIGIQ_AGENT_TYPE,
             'configurations': agent_configurations,
@@ -109,7 +109,7 @@ class F5BIGIQAgentManager(periodic_task.PeriodicTasks):
         self.plugin_rpc = plugin_rpc.LBaaSv2PluginRPC(
             self.context,
             topic,
-            self.conf.agent_id
+            self.agent_host
         )
 
         # Setting up outbound communcations with the neutron agent extension
@@ -130,7 +130,7 @@ class F5BIGIQAgentManager(periodic_task.PeriodicTasks):
     def initialize_service_hook(self, started_by):
         """Create service hook to listen for messanges on agent topic."""
         node_topic = "%s.%s" % (constants.TOPIC_LBAASV2_BIGIQ_AGENT,
-                                self.conf.agent_id)
+                                self.agent_host)
         LOG.debug("Creating topic for consuming messages: %s" % node_topic)
         endpoints = [started_by.manager]
         started_by.conn.create_consumer(
