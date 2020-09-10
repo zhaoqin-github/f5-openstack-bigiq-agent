@@ -51,6 +51,10 @@ def main():
     common_config.init(sys.argv[1:])
     config.setup_logging()
 
+    if not cfg.CONF.agent_id:
+        LOG.error("Agent ID is undefined. Quit process.")
+        sys.exit(1)
+
     mgr = manager.F5BIGIQAgentManager(cfg.CONF)
 
     svc = F5BIGIQAgentService(
