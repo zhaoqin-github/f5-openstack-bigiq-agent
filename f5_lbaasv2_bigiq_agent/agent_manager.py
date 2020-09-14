@@ -8,6 +8,7 @@ from oslo_service import periodic_task
 from neutron.agent import rpc as agent_rpc
 from neutron_lib import context as ncontext
 
+from f5_lbaasv2_bigiq_agent import bigiq
 from f5_lbaasv2_bigiq_agent import constants
 from f5_lbaasv2_bigiq_agent import plugin_rpc
 
@@ -17,29 +18,39 @@ PERIODIC_TASK_INTERVAL = 60
 
 OPTS = [
     cfg.IntOpt(
-        'periodic_interval',
+        "periodic_interval",
         default=PERIODIC_TASK_INTERVAL,
-        help='Seconds between periodic task runs'
+        help="Seconds between periodic task runs"
     ),
     cfg.BoolOpt(
-        'start_agent_admin_state_up',
+        "start_agent_admin_state_up",
         default=True,
-        help='Should the agent force its admin_state_up to True on boot'
+        help="Should the agent force its admin_state_up to True on boot"
     ),
     cfg.StrOpt(
-        'provider_name',
-        default='f5networks',
-        help=('provider_name for snat pool addresses')
+        "provider_name",
+        default="f5networks",
+        help=("provider_name for snat pool addresses")
     ),
     cfg.StrOpt(
-        'agent_id',
+        "agent_id",
         default=None,
-        help=('Static agent ID to use with Neutron')
+        help=("Static agent ID to use with Neutron")
     ),
     cfg.StrOpt(
-        'bigiq_host',
-        default='10.145.73.220',
-        help=('BIG-IQ hostname or IP address')
+        "bigiq_host",
+        default=None,
+        help=("BIG-IQ hostname or IP address")
+    ),
+    cfg.StrOpt(
+        "bigiq_user",
+        default="admin",
+        help=("BIG-IQ username")
+    ),
+    cfg.StrOpt(
+        "bigiq_password",
+        default="default",
+        help=("BIG-IQ password")
     )
 ]
 
@@ -116,13 +127,24 @@ class F5BIGIQAgentManager(periodic_task.PeriodicTasks):
         self.state_rpc = agent_rpc.PluginReportStateAPI(topic)
 
     def _report_state(self, force_resync=False):
+        agent_admin_state = True
+
         try:
-            self.plugin_rpc.set_agent_admin_state(True)
+            bigiq_client = bigiq.BIGIQClient(self.conf)
+            version = bigiq_client.get_info()['version']
+            self.agent_state['configurations']['bigiq_version'] = version
+        except Exception as ex:
+            agent_admin_state = False
+            LOG.exception("Fail to communicate with BIG-IQ: %s",
+                          str(ex.message))
+
+        try:
+            self.plugin_rpc.set_agent_admin_state(agent_admin_state)
             LOG.debug("reporting state of agent as: %s" % self.agent_state)
             self.state_rpc.report_state(self.context, self.agent_state)
             self.agent_state.pop('start_flag', None)
-        except Exception as e:
-            LOG.exception(("Failed to report state: " + str(e.message)))
+        except Exception as ex:
+            LOG.exception("Failed to report state: " + str(ex.message))
 
     # callback from oslo messaging letting us know we are properly
     # connected to the message bus so we can register for inbound
