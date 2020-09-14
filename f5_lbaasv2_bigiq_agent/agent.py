@@ -55,6 +55,10 @@ def main():
         LOG.error("Agent ID is undefined. Quit process.")
         sys.exit(1)
 
+    if not cfg.CONF.bigiq_host:
+        LOG.error("BIG-IQ host is undefined. Quit process.")
+        sys.exit(1)
+
     mgr = manager.F5BIGIQAgentManager(cfg.CONF)
 
     svc = F5BIGIQAgentService(
