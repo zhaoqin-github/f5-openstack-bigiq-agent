@@ -8,9 +8,10 @@ from oslo_service import periodic_task
 from neutron.agent import rpc as agent_rpc
 from neutron_lib import context as ncontext
 
-from f5_lbaasv2_bigiq_agent import bigiq
+from f5_lbaasv2_bigiq_agent import bigiq_client
 from f5_lbaasv2_bigiq_agent import constants
 from f5_lbaasv2_bigiq_agent import plugin_rpc
+from f5_lbaasv2_bigiq_agent import scheduler
 
 LOG = logging.getLogger(__name__)
 
@@ -51,7 +52,12 @@ OPTS = [
         "bigiq_password",
         default="default",
         help=("BIG-IQ password")
-    )
+    ),
+    cfg.StrOpt(
+        "bigip_filters",
+        default="ActiveFilter,RandomFilter",
+        help=("BIG-IP filters")
+    ),
 ]
 
 
@@ -70,6 +76,9 @@ class F5BIGIQAgentManager(periodic_task.PeriodicTasks):
         self.conf = conf
         self.context = ncontext.get_admin_context_without_session()
         self.serializer = None
+
+        filter_names = [name for name in self.conf.bigip_filters.split(",")]
+        self.scheduler = scheduler.BIGIPScheduler(filter_names)
 
         self.agent_host = self.conf.host + ":" + self.conf.agent_id
 
@@ -130,8 +139,8 @@ class F5BIGIQAgentManager(periodic_task.PeriodicTasks):
         agent_admin_state = True
 
         try:
-            bigiq_client = bigiq.BIGIQClient(self.conf)
-            version = bigiq_client.get_info()['version']
+            bigiq = bigiq_client.BIGIQClient(self.conf)
+            version = bigiq.get_info()['version']
             self.agent_state['configurations']['bigiq_version'] = version
         except Exception as ex:
             agent_admin_state = False
@@ -176,8 +185,30 @@ class F5BIGIQAgentManager(periodic_task.PeriodicTasks):
     @log_helpers.log_method_call
     def create_loadbalancer(self, context, loadbalancer, **kwargs):
         """Handle RPC cast from plugin to create_loadbalancer."""
-        self.plugin_rpc.update_loadbalancer_status(
-            loadbalancer['id'], constants.ACTIVE, constants.ONLINE)
+        lb_id = loadbalancer['id']
+        tenant_id = loadbalancer['tenant_id']
+        bigiq = bigiq_client.BIGIQClient(self.conf)
+        bigips = bigiq.get_devices_in_tenant_device_group(tenant_id)
+
+        if len(bigips) == 0:
+            LOG.error("No eligibale BIG-IP for tenant %s", tenant_id)
+            self.plugin_rpc.update_loadbalancer_status(
+                lb_id, constants.ERROR, constants.OFFLINE)
+            return
+
+        candidates = self.scheduler.schedule(bigips)
+        if len(candidates) == 1:
+            # TODO: associate loadbalancer with BIG-IP device
+            self.plugin_rpc.update_loadbalancer_status(
+                lb_id, constants.ACTIVE, constants.ONLINE)
+        elif len(bigips) == 0:
+            LOG.error("No eligibale BIG-IP for loadbalancer %s", lb_id)
+            self.plugin_rpc.update_loadbalancer_status(
+                lb_id, constants.ERROR, constants.OFFLINE)
+        else:
+            LOG.error("Several eligibale BIG-IPs for loadbalancer %s", lb_id)
+            self.plugin_rpc.update_loadbalancer_status(
+                lb_id, constants.ERROR, constants.OFFLINE)
 
     @log_helpers.log_method_call
     def update_loadbalancer(self, context, old_loadbalancer,
