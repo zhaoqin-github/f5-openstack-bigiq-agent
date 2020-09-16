@@ -11,7 +11,7 @@ from neutron_lib import context as ncontext
 from f5_lbaasv2_bigiq_agent import bigiq_client
 from f5_lbaasv2_bigiq_agent import constants
 from f5_lbaasv2_bigiq_agent import plugin_rpc
-from f5_lbaasv2_bigiq_agent import scheduler
+from f5_lbaasv2_bigiq_agent.scheduler import scheduler
 
 LOG = logging.getLogger(__name__)
 
