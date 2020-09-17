@@ -80,6 +80,9 @@ class F5BIGIQAgentManager(periodic_task.PeriodicTasks):
         filter_names = [name for name in self.conf.bigip_filters.split(",")]
         self.scheduler = scheduler.BIGIPScheduler(filter_names)
 
+        # TODO: replace this map with a db
+        self._lb_bigip_map = {}
+
         self.agent_host = self.conf.host + ":" + self.conf.agent_id
 
         global PERIODIC_TASK_INTERVAL
@@ -182,6 +185,18 @@ class F5BIGIQAgentManager(periodic_task.PeriodicTasks):
         """Handle the agent_updated notification event."""
         pass
 
+    def _associate_lb_with_bigip(self, lb_id, bigip_id):
+        # TODO: implement a db to save it
+        self._lb_bigip_map[lb_id] = bigip_id
+
+    def _deassociate_lb_with_bigip(self, lb_id):
+        # TODO: implement a db to save it
+        del self._lb_bigip_map[lb_id]
+
+    def _lookup_associated_bigip(self, lb_id):
+        # TODO: implement a db to find it
+        return self._lb_bigip_map.get(lb_id)
+
     @log_helpers.log_method_call
     def create_loadbalancer(self, context, loadbalancer, **kwargs):
         """Handle RPC cast from plugin to create_loadbalancer."""
@@ -197,30 +212,49 @@ class F5BIGIQAgentManager(periodic_task.PeriodicTasks):
             return
 
         candidates = self.scheduler.schedule(bigips)
-        if len(candidates) == 1:
-            # TODO: associate loadbalancer with BIG-IP device
-            self.plugin_rpc.update_loadbalancer_status(
-                lb_id, constants.ACTIVE, constants.ONLINE)
-        elif len(bigips) == 0:
+        if len(candidates) == 0:
             LOG.error("No eligibale BIG-IP for loadbalancer %s", lb_id)
-            self.plugin_rpc.update_loadbalancer_status(
-                lb_id, constants.ERROR, constants.OFFLINE)
-        else:
+            provision_status = constants.ERROR
+            operating_status = constants.OFFLINE
+        elif len(bigips) > 1:
             LOG.error("Several eligibale BIG-IPs for loadbalancer %s", lb_id)
-            self.plugin_rpc.update_loadbalancer_status(
-                lb_id, constants.ERROR, constants.OFFLINE)
+            provision_status = constants.ERROR
+            operating_status = constants.OFFLINE
+        else:
+            bigip_id = candidates[0]['uuid']
+            self._associate_lb_with_bigip(lb_id, bigip_id)
+            # Needn't do anything in BIG-IP
+            provision_status = constants.ACTIVE
+            operating_status = constants.ONLINE
+
+        self.plugin_rpc.update_loadbalancer_status(
+            lb_id, provision_status, operating_status)
 
     @log_helpers.log_method_call
     def update_loadbalancer(self, context, old_loadbalancer,
                             loadbalancer, **kwargs):
         """Handle RPC cast from plugin to update_loadbalancer."""
+        lb_id = loadbalancer['id']
+        bipip_id = self._lookup_associated_bigip(lb_id)
+
+        if bipip_id is None:
+            LOG.error("Cannot find associated BIG-IP of loadbalancer %s",
+                      lb_id)
+            provision_status = constants.ERROR
+            operating_status = constants.ONLINE
+        else:
+            provision_status = constants.ACTIVE
+            operating_status = constants.ONLINE
+
         self.plugin_rpc.update_loadbalancer_status(
-            loadbalancer['id'], constants.ACTIVE, constants.ONLINE)
+            lb_id, provision_status, operating_status)
 
     @log_helpers.log_method_call
     def delete_loadbalancer(self, context, loadbalancer, **kwargs):
         """Handle RPC cast from plugin to delete_loadbalancer."""
-        self.plugin_rpc.loadbalancer_destroyed(loadbalancer['id'])
+        lb_id = loadbalancer['id']
+        self._deassociate_lb_with_bigip(lb_id)
+        self.plugin_rpc.loadbalancer_destroyed(lb_id)
 
     @log_helpers.log_method_call
     def update_loadbalancer_stats(self, context, loadbalancer, **kwarg):
