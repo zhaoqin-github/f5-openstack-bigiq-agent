@@ -19,7 +19,7 @@ class BIGIPScheduler(object):
                 self.filter_instances.append(filter_class())
 
     def schedule(self, bigips):
-        candidates = []
+        candidates = bigips
         for ins in self.filter_instances:
-            candidates = ins.filter_all(bigips)
+            candidates = ins.filter_all(candidates)
         return candidates
