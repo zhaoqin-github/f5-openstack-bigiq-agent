@@ -345,6 +345,7 @@ class F5BIGIQAgentManager(periodic_task.PeriodicTasks):
         try:
             bigiq = bigiq_client.BIGIQClient(self.conf)
             bigiq.delete_listener(bigip_id, listener, loadbalancer)
+            self.plugin_rpc.listener_destroyed(listener['id'])
             provision_status = constants.ACTIVE
             operating_status = constants.ONLINE
         except Exception:
