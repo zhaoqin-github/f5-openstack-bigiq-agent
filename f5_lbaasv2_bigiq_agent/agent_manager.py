@@ -201,6 +201,20 @@ class F5BIGIQAgentManager(periodic_task.PeriodicTasks):
                       lb_id)
         return bigip_id
 
+    def _provision_done(self, loadbalancer, done=True, **kwargs):
+        if done:
+            p_status = constants.ACTIVE
+            o_status = constants.ONLINE
+        else:
+            p_status = constants.ERROR
+            o_status = loadbalancer['operating_status']
+
+        try:
+            self.plugin_rpc.update_loadbalancer_status(
+                loadbalancer['id'], p_status, o_status)
+        except Exception as ex:
+            LOG.exception("Fail to update loadbalancer status: %s", ex.message)
+
     @log_helpers.log_method_call
     def create_loadbalancer(self, context, loadbalancer, **kwargs):
         """Handle RPC cast from plugin to create_loadbalancer."""
@@ -211,33 +225,25 @@ class F5BIGIQAgentManager(periodic_task.PeriodicTasks):
 
         if len(bigips) == 0:
             LOG.error("No eligibale BIG-IP for tenant %s", tenant_id)
-            self.plugin_rpc.update_loadbalancer_status(
-                lb_id, constants.ERROR, constants.OFFLINE)
+            self._provision_done(loadbalancer, False)
             return
 
         candidates = self.scheduler.schedule(bigips)
         if len(candidates) == 0:
             LOG.error("No eligibale BIG-IP for loadbalancer %s", lb_id)
-            provision_status = constants.ERROR
-            operating_status = constants.OFFLINE
+            self._provision_done(loadbalancer, False)
         elif len(bigips) > 1:
             LOG.error("Several eligibale BIG-IPs for loadbalancer %s", lb_id)
-            provision_status = constants.ERROR
-            operating_status = constants.OFFLINE
+            self._provision_done(loadbalancer, False)
         else:
             bigip_id = candidates[0]['uuid']
             self._associate_lb_with_bigip(lb_id, bigip_id)
             try:
                 bigiq = bigiq_client.BIGIQClient(self.conf)
                 bigiq.create_loadbalancer(bigip_id, loadbalancer)
-                provision_status = constants.ACTIVE
-                operating_status = constants.ONLINE
+                self._provision_done(loadbalancer)
             except Exception:
-                provision_status = constants.ERROR
-                operating_status = constants.OFFLINE
-
-        self.plugin_rpc.update_loadbalancer_status(
-            lb_id, provision_status, operating_status)
+                self._provision_done(loadbalancer, False)
 
     @log_helpers.log_method_call
     def update_loadbalancer(self, context, old_loadbalancer,
@@ -247,23 +253,15 @@ class F5BIGIQAgentManager(periodic_task.PeriodicTasks):
         bigip_id = self._lookup_associated_bigip(lb_id)
 
         if bigip_id is None:
-            provision_status = constants.ERROR
-            operating_status = loadbalancer['operating_status']
-            self.plugin_rpc.update_loadbalancer_status(
-                lb_id, provision_status, operating_status)
+            self._provision_done(loadbalancer, False)
             return
 
         try:
             bigiq = bigiq_client.BIGIQClient(self.conf)
             bigiq.update_loadbalancer(bigip_id, loadbalancer)
-            provision_status = constants.ACTIVE
-            operating_status = constants.ONLINE
+            self._provision_done(loadbalancer)
         except Exception:
-            provision_status = constants.ERROR
-            operating_status = loadbalancer['operating_status']
-
-        self.plugin_rpc.update_loadbalancer_status(
-            lb_id, provision_status, operating_status)
+            self._provision_done(loadbalancer, False)
 
     @log_helpers.log_method_call
     def delete_loadbalancer(self, context, loadbalancer, **kwargs):
@@ -272,23 +270,16 @@ class F5BIGIQAgentManager(periodic_task.PeriodicTasks):
         bigip_id = self._lookup_associated_bigip(lb_id)
 
         if bigip_id is None:
-            provision_status = constants.ERROR
-            operating_status = loadbalancer['operating_status']
-            self.plugin_rpc.update_loadbalancer_status(
-                lb_id, provision_status, operating_status)
+            self._provision_done(loadbalancer, False)
             return
 
         try:
             bigiq = bigiq_client.BIGIQClient(self.conf)
             bigiq.delete_loadbalancer(bigip_id, loadbalancer)
-            provision_status = constants.ACTIVE
-            operating_status = constants.ONLINE
+            self._deassociate_lb_with_bigip(lb_id)
+            self.plugin_rpc.loadbalancer_destroyed(lb_id)
         except Exception:
-            provision_status = constants.ERROR
-            operating_status = loadbalancer['operating_status']
-
-        self._deassociate_lb_with_bigip(lb_id)
-        self.plugin_rpc.loadbalancer_destroyed(lb_id)
+            self._provision_done(loadbalancer, False)
 
     @log_helpers.log_method_call
     def update_loadbalancer_stats(self, context, loadbalancer, **kwarg):
@@ -303,30 +294,21 @@ class F5BIGIQAgentManager(periodic_task.PeriodicTasks):
         bigip_id = self._lookup_associated_bigip(lb_id)
 
         if bigip_id is None:
-            provision_status = constants.ERROR
-            operating_status = loadbalancer['operating_status']
-            self.plugin_rpc.update_loadbalancer_status(
-                lb_id, provision_status, operating_status)
+            self._provision_done(loadbalancer, False)
             return
 
         try:
             bigiq = bigiq_client.BIGIQClient(self.conf)
             bigiq.create_listener(bigip_id, listener, loadbalancer)
-            provision_status = constants.ACTIVE
-            operating_status = constants.ONLINE
+            self._provision_done(loadbalancer)
         except Exception:
-            provision_status = constants.ERROR
-            operating_status = loadbalancer['operating_status']
-
-        self.plugin_rpc.update_loadbalancer_status(
-            lb_id, provision_status, operating_status)
+            self._provision_done(loadbalancer, False)
 
     @log_helpers.log_method_call
     def update_listener(self, context, old_listener, listener, **kwarg):
         """Handle RPC cast from plugin to update_listener."""
         loadbalancer = kwarg['loadbalancer']
-        self.plugin_rpc.update_loadbalancer_status(
-            loadbalancer['id'], constants.ACTIVE, constants.ONLINE)
+        self._provision_done(loadbalancer)
 
     @log_helpers.log_method_call
     def delete_listener(self, context, listener, **kwarg):
@@ -336,132 +318,109 @@ class F5BIGIQAgentManager(periodic_task.PeriodicTasks):
         bigip_id = self._lookup_associated_bigip(lb_id)
 
         if bigip_id is None:
-            provision_status = constants.ERROR
-            operating_status = loadbalancer['operating_status']
-            self.plugin_rpc.update_loadbalancer_status(
-                lb_id, provision_status, operating_status)
+            self._provision_done(loadbalancer, False)
             return
 
         try:
             bigiq = bigiq_client.BIGIQClient(self.conf)
             bigiq.delete_listener(bigip_id, listener, loadbalancer)
             self.plugin_rpc.listener_destroyed(listener['id'])
-            provision_status = constants.ACTIVE
-            operating_status = constants.ONLINE
+            self._provision_done(loadbalancer)
         except Exception:
-            provision_status = constants.ERROR
-            operating_status = loadbalancer['operating_status']
-
-        self.plugin_rpc.update_loadbalancer_status(
-            lb_id, provision_status, operating_status)
+            self._provision_done(loadbalancer, False)
 
     @log_helpers.log_method_call
     def create_pool(self, context, pool, **kwarg):
         """Handle RPC cast from plugin to create_pool."""
         loadbalancer = kwarg['loadbalancer']
-        self.plugin_rpc.update_loadbalancer_status(
-            loadbalancer['id'], constants.ACTIVE, constants.ONLINE)
+        self._provision_done(loadbalancer)
 
     @log_helpers.log_method_call
     def update_pool(self, context, old_pool, pool, **kwarg):
         """Handle RPC cast from plugin to update_pool."""
         loadbalancer = kwarg['loadbalancer']
-        self.plugin_rpc.update_loadbalancer_status(
-            loadbalancer['id'], constants.ACTIVE, constants.ONLINE)
+        self._provision_done(loadbalancer)
 
     @log_helpers.log_method_call
     def delete_pool(self, context, pool, **kwarg):
         """Handle RPC cast from plugin to delete_pool."""
         loadbalancer = kwarg['loadbalancer']
         self.plugin_rpc.pool_destroyed(pool['id'])
-        self.plugin_rpc.update_loadbalancer_status(
-            loadbalancer['id'], constants.ACTIVE, constants.ONLINE)
+        self._provision_done(loadbalancer)
 
     @log_helpers.log_method_call
     def create_member(self, context, member, **kwarg):
         """Handle RPC cast from plugin to create_member."""
         loadbalancer = kwarg['loadbalancer']
-        self.plugin_rpc.update_loadbalancer_status(
-            loadbalancer['id'], constants.ACTIVE, constants.ONLINE)
+        self._provision_done(loadbalancer)
 
     @log_helpers.log_method_call
     def update_member(self, context, old_member, member, **kwarg):
         """Handle RPC cast from plugin to update_member."""
         loadbalancer = kwarg['loadbalancer']
-        self.plugin_rpc.update_loadbalancer_status(
-            loadbalancer['id'], constants.ACTIVE, constants.ONLINE)
+        self._provision_done(loadbalancer)
 
     @log_helpers.log_method_call
     def delete_member(self, context, member, **kwarg):
         """Handle RPC cast from plugin to delete_member."""
         loadbalancer = kwarg['loadbalancer']
         self.plugin_rpc.member_destroyed(member['id'])
-        self.plugin_rpc.update_loadbalancer_status(
-            loadbalancer['id'], constants.ACTIVE, constants.ONLINE)
+        self._provision_done(loadbalancer)
 
     @log_helpers.log_method_call
     def create_health_monitor(self, context, health_monitor, **kwarg):
         """Handle RPC cast from plugin to create_pool_health_monitor."""
         loadbalancer = kwarg['loadbalancer']
-        self.plugin_rpc.update_loadbalancer_status(
-            loadbalancer['id'], constants.ACTIVE, constants.ONLINE)
+        self._provision_done(loadbalancer)
 
     @log_helpers.log_method_call
     def update_health_monitor(self, context, old_health_monitor,
                               health_monitor, **kwarg):
         """Handle RPC cast from plugin to update_health_monitor."""
         loadbalancer = kwarg['loadbalancer']
-        self.plugin_rpc.update_loadbalancer_status(
-            loadbalancer['id'], constants.ACTIVE, constants.ONLINE)
+        self._provision_done(loadbalancer)
 
     @log_helpers.log_method_call
     def delete_health_monitor(self, context, health_monitor, **kwarg):
         """Handle RPC cast from plugin to delete_health_monitor."""
         loadbalancer = kwarg['loadbalancer']
         self.plugin_rpc.health_monitor_destroyed(health_monitor['id'])
-        self.plugin_rpc.update_loadbalancer_status(
-            loadbalancer['id'], constants.ACTIVE, constants.ONLINE)
+        self._provision_done(loadbalancer)
 
     @log_helpers.log_method_call
     def create_l7policy(self, context, l7policy, **kwarg):
         """Handle RPC cast from plugin to create_l7policy."""
         loadbalancer = kwarg['loadbalancer']
-        self.plugin_rpc.update_loadbalancer_status(
-            loadbalancer['id'], constants.ACTIVE, constants.ONLINE)
+        self._provision_done(loadbalancer)
 
     @log_helpers.log_method_call
     def update_l7policy(self, context, old_l7policy, l7policy, **kwarg):
         """Handle RPC cast from plugin to update_l7policy."""
         loadbalancer = kwarg['loadbalancer']
-        self.plugin_rpc.update_loadbalancer_status(
-            loadbalancer['id'], constants.ACTIVE, constants.ONLINE)
+        self._provision_done(loadbalancer)
 
     @log_helpers.log_method_call
     def delete_l7policy(self, context, l7policy, **kwarg):
         """Handle RPC cast from plugin to delete_l7policy."""
         loadbalancer = kwarg['loadbalancer']
         self.plugin_rpc.l7policy_destroyed(l7policy['id'])
-        self.plugin_rpc.update_loadbalancer_status(
-            loadbalancer['id'], constants.ACTIVE, constants.ONLINE)
+        self._provision_done(loadbalancer)
 
     @log_helpers.log_method_call
     def create_l7rule(self, context, l7rule, **kwarg):
         """Handle RPC cast from plugin to create_l7rule."""
         loadbalancer = kwarg['loadbalancer']
-        self.plugin_rpc.update_loadbalancer_status(
-            loadbalancer['id'], constants.ACTIVE, constants.ONLINE)
+        self._provision_done(loadbalancer)
 
     @log_helpers.log_method_call
     def update_l7rule(self, context, old_l7rule, l7rule, **kwarg):
         """Handle RPC cast from plugin to update_l7rule."""
         loadbalancer = kwarg['loadbalancer']
-        self.plugin_rpc.update_loadbalancer_status(
-            loadbalancer['id'], constants.ACTIVE, constants.ONLINE)
+        self._provision_done(loadbalancer)
 
     @log_helpers.log_method_call
     def delete_l7rule(self, context, l7rule, **kwarg):
         """Handle RPC cast from plugin to delete_l7rule."""
         loadbalancer = kwarg['loadbalancer']
         self.plugin_rpc.l7rule_destroyed(l7rule['id'])
-        self.plugin_rpc.update_loadbalancer_status(
-            loadbalancer['id'], constants.ACTIVE, constants.ONLINE)
+        self._provision_done(loadbalancer)
