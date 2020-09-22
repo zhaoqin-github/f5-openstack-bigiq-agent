@@ -8,9 +8,9 @@ from oslo_service import periodic_task
 from neutron.agent import rpc as agent_rpc
 from neutron_lib import context as ncontext
 
-from f5_lbaasv2_bigiq_agent import bigiq_client
 from f5_lbaasv2_bigiq_agent import constants
 from f5_lbaasv2_bigiq_agent import plugin_rpc
+from f5_lbaasv2_bigiq_agent.bigiq import get_bigiq_mgr
 from f5_lbaasv2_bigiq_agent.scheduler import scheduler
 
 LOG = logging.getLogger(__name__)
@@ -58,6 +58,11 @@ OPTS = [
         default="ActiveFilter,RandomFilter",
         help=("BIG-IP filters")
     ),
+    cfg.StrOpt(
+        "deploy_mode",
+        default="icontrol",
+        help=("BIG-IP configuration deploy mode")
+    )
 ]
 
 
@@ -142,7 +147,7 @@ class F5BIGIQAgentManager(periodic_task.PeriodicTasks):
         agent_admin_state = True
 
         try:
-            bigiq = bigiq_client.BIGIQClient(self.conf)
+            bigiq = get_bigiq_mgr(self.conf)
             version = bigiq.get_info()['version']
             self.agent_state['configurations']['bigiq_version'] = version
         except Exception as ex:
@@ -220,7 +225,7 @@ class F5BIGIQAgentManager(periodic_task.PeriodicTasks):
         """Handle RPC cast from plugin to create_loadbalancer."""
         lb_id = loadbalancer['id']
         tenant_id = loadbalancer['tenant_id']
-        bigiq = bigiq_client.BIGIQClient(self.conf)
+        bigiq = get_bigiq_mgr(self.conf)
         bigips = bigiq.get_devices_in_tenant_device_group(tenant_id)
 
         if len(bigips) == 0:
@@ -239,7 +244,7 @@ class F5BIGIQAgentManager(periodic_task.PeriodicTasks):
             bigip_id = candidates[0]['uuid']
             self._associate_lb_with_bigip(lb_id, bigip_id)
             try:
-                bigiq = bigiq_client.BIGIQClient(self.conf)
+                bigiq = get_bigiq_mgr(self.conf)
                 bigiq.create_loadbalancer(bigip_id, loadbalancer)
                 self._provision_done(loadbalancer)
             except Exception:
@@ -257,7 +262,7 @@ class F5BIGIQAgentManager(periodic_task.PeriodicTasks):
             return
 
         try:
-            bigiq = bigiq_client.BIGIQClient(self.conf)
+            bigiq = get_bigiq_mgr(self.conf)
             bigiq.update_loadbalancer(bigip_id, loadbalancer)
             self._provision_done(loadbalancer)
         except Exception:
@@ -274,7 +279,7 @@ class F5BIGIQAgentManager(periodic_task.PeriodicTasks):
             return
 
         try:
-            bigiq = bigiq_client.BIGIQClient(self.conf)
+            bigiq = get_bigiq_mgr(self.conf)
             bigiq.delete_loadbalancer(bigip_id, loadbalancer)
             self._deassociate_lb_with_bigip(lb_id)
             self.plugin_rpc.loadbalancer_destroyed(lb_id)
@@ -298,7 +303,7 @@ class F5BIGIQAgentManager(periodic_task.PeriodicTasks):
             return
 
         try:
-            bigiq = bigiq_client.BIGIQClient(self.conf)
+            bigiq = get_bigiq_mgr(self.conf)
             bigiq.create_listener(bigip_id, listener, loadbalancer)
             self._provision_done(loadbalancer)
         except Exception:
@@ -322,7 +327,7 @@ class F5BIGIQAgentManager(periodic_task.PeriodicTasks):
             return
 
         try:
-            bigiq = bigiq_client.BIGIQClient(self.conf)
+            bigiq = get_bigiq_mgr(self.conf)
             bigiq.delete_listener(bigip_id, listener, loadbalancer)
             self.plugin_rpc.listener_destroyed(listener['id'])
             self._provision_done(loadbalancer)
