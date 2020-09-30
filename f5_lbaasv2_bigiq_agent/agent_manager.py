@@ -338,7 +338,19 @@ class F5BIGIQAgentManager(periodic_task.PeriodicTasks):
     def create_pool(self, context, pool, **kwarg):
         """Handle RPC cast from plugin to create_pool."""
         loadbalancer = kwarg['loadbalancer']
-        self._provision_done(loadbalancer)
+        lb_id = loadbalancer['id']
+        bigip_id = self._lookup_associated_bigip(lb_id)
+
+        if bigip_id is None:
+            self._provision_done(loadbalancer, False)
+            return
+
+        try:
+            bigiq = get_bigiq_mgr(self.conf)
+            bigiq.create_pool(bigip_id, pool, loadbalancer)
+            self._provision_done(loadbalancer)
+        except Exception:
+            self._provision_done(loadbalancer, False)
 
     @log_helpers.log_method_call
     def update_pool(self, context, old_pool, pool, **kwarg):
@@ -350,14 +362,38 @@ class F5BIGIQAgentManager(periodic_task.PeriodicTasks):
     def delete_pool(self, context, pool, **kwarg):
         """Handle RPC cast from plugin to delete_pool."""
         loadbalancer = kwarg['loadbalancer']
-        self.plugin_rpc.pool_destroyed(pool['id'])
-        self._provision_done(loadbalancer)
+        lb_id = loadbalancer['id']
+        bigip_id = self._lookup_associated_bigip(lb_id)
+
+        if bigip_id is None:
+            self._provision_done(loadbalancer, False)
+            return
+
+        try:
+            bigiq = get_bigiq_mgr(self.conf)
+            bigiq.delete_pool(bigip_id, pool, loadbalancer)
+            self.plugin_rpc.pool_destroyed(pool['id'])
+            self._provision_done(loadbalancer)
+        except Exception:
+            self._provision_done(loadbalancer, False)
 
     @log_helpers.log_method_call
     def create_member(self, context, member, **kwarg):
         """Handle RPC cast from plugin to create_member."""
         loadbalancer = kwarg['loadbalancer']
-        self._provision_done(loadbalancer)
+        lb_id = loadbalancer['id']
+        bigip_id = self._lookup_associated_bigip(lb_id)
+
+        if bigip_id is None:
+            self._provision_done(loadbalancer, False)
+            return
+
+        try:
+            bigiq = get_bigiq_mgr(self.conf)
+            bigiq.create_member(bigip_id, member, loadbalancer)
+            self._provision_done(loadbalancer)
+        except Exception:
+            self._provision_done(loadbalancer, False)
 
     @log_helpers.log_method_call
     def update_member(self, context, old_member, member, **kwarg):
@@ -369,14 +405,38 @@ class F5BIGIQAgentManager(periodic_task.PeriodicTasks):
     def delete_member(self, context, member, **kwarg):
         """Handle RPC cast from plugin to delete_member."""
         loadbalancer = kwarg['loadbalancer']
-        self.plugin_rpc.member_destroyed(member['id'])
-        self._provision_done(loadbalancer)
+        lb_id = loadbalancer['id']
+        bigip_id = self._lookup_associated_bigip(lb_id)
+
+        if bigip_id is None:
+            self._provision_done(loadbalancer, False)
+            return
+
+        try:
+            bigiq = get_bigiq_mgr(self.conf)
+            bigiq.delete_member(bigip_id, member, loadbalancer)
+            self.plugin_rpc.member_destroyed(member['id'])
+            self._provision_done(loadbalancer)
+        except Exception:
+            self._provision_done(loadbalancer, False)
 
     @log_helpers.log_method_call
     def create_health_monitor(self, context, health_monitor, **kwarg):
         """Handle RPC cast from plugin to create_pool_health_monitor."""
         loadbalancer = kwarg['loadbalancer']
-        self._provision_done(loadbalancer)
+        lb_id = loadbalancer['id']
+        bigip_id = self._lookup_associated_bigip(lb_id)
+
+        if bigip_id is None:
+            self._provision_done(loadbalancer, False)
+            return
+
+        try:
+            bigiq = get_bigiq_mgr(self.conf)
+            bigiq.create_monitor(bigip_id, health_monitor, loadbalancer)
+            self._provision_done(loadbalancer)
+        except Exception:
+            self._provision_done(loadbalancer, False)
 
     @log_helpers.log_method_call
     def update_health_monitor(self, context, old_health_monitor,
@@ -389,8 +449,20 @@ class F5BIGIQAgentManager(periodic_task.PeriodicTasks):
     def delete_health_monitor(self, context, health_monitor, **kwarg):
         """Handle RPC cast from plugin to delete_health_monitor."""
         loadbalancer = kwarg['loadbalancer']
-        self.plugin_rpc.health_monitor_destroyed(health_monitor['id'])
-        self._provision_done(loadbalancer)
+        lb_id = loadbalancer['id']
+        bigip_id = self._lookup_associated_bigip(lb_id)
+
+        if bigip_id is None:
+            self._provision_done(loadbalancer, False)
+            return
+
+        try:
+            bigiq = get_bigiq_mgr(self.conf)
+            bigiq.delete_monitor(bigip_id, health_monitor, loadbalancer)
+            self.plugin_rpc.health_monitor_destroyed(health_monitor['id'])
+            self._provision_done(loadbalancer)
+        except Exception:
+            self._provision_done(loadbalancer, False)
 
     @log_helpers.log_method_call
     def create_l7policy(self, context, l7policy, **kwarg):

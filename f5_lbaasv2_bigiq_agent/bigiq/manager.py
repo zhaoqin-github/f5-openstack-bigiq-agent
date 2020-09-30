@@ -77,16 +77,13 @@ class BIGIQManager(object):
     def delete_member(self, bigip_id, member, loadbalancer, **kwargs):
         pass
 
-    def create_health_monitor(self, bigip_id, health_monitor, loadbalancer,
-                              **kwargs):
+    def create_monitor(self, bigip_id, monitor, loadbalancer, **kwargs):
         pass
 
-    def update_health_monitor(self, bigip_id, health_monitor, loadbalancer,
-                              **kwargs):
+    def update_monitor(self, bigip_id, monitor, loadbalancer, **kwargs):
         pass
 
-    def delete_heath_monitor(self, bigip_id, health_monitor, loadbalancer,
-                             **kwargs):
+    def delete_monitor(self, bigip_id, monitor, loadbalancer, **kwargs):
         pass
 
     def create_l7policy(self, bigip_id, l7policy, loadbalancer, **kwargs):

@@ -13,6 +13,13 @@ sys_root = "/rest-proxy/mgmt/tm/sys"
 
 ltm_root = "/rest-proxy/mgmt/tm/ltm"
 
+monitor_path = {
+    "PING": "icmp",
+    "TCP": "tcp",
+    "HTTP": "http",
+    "HTTPS": "https"
+}
+
 
 class BIGIQManagerIControl(BIGIQManager):
     """BIG-IQ Manager which utilizes iControl REST"""
@@ -59,14 +66,6 @@ class BIGIQManagerIControl(BIGIQManager):
             else:
                 LOG.error("Fail to delete %s : %s", resource, ex.message)
                 raise ex
-
-    def _find_pool_by_member(self, loadbalancer, member_id):
-        pool = None
-        for p in loadbalancer['pools']:
-            for m in pool['members']:
-                if member_id == m['id']:
-                    return p
-        return pool
 
     def create_loadbalancer(self, bigip_id, loadbalancer, **kwargs):
         partition = "loadbalancer-" + loadbalancer['id']
@@ -125,9 +124,9 @@ class BIGIQManagerIControl(BIGIQManager):
 
     def create_member(self, bigip_id, member, loadbalancer, **kwargs):
         partition = "loadbalancer-" + loadbalancer['id']
-        member_name = "member-" + member['id'] + ":" + member['protocol_port']
-        pool = self._find_pool_by_member(loadbalancer, member['id'])
-        pool_name = "pool-" + pool['id']
+        pool_name = "pool-" + member['pool_id']
+        member_name = "member-" + member['id'] + ":" + \
+                      str(member['protocol_port'])
         uri = "{0}{1}{2}/pool/~{3}~{4}/members".format(
             bigip_root, bigip_id, ltm_root, partition, pool_name)
         body = {
@@ -139,28 +138,29 @@ class BIGIQManagerIControl(BIGIQManager):
 
     def delete_member(self, bigip_id, member, loadbalancer, **kwargs):
         partition = "loadbalancer-" + loadbalancer['id']
-        member_name = "member-" + member['id'] + ":" + member['protocol_port']
-        pool = self._find_pool_by_member(loadbalancer, member['id'])
-        pool_name = "pool-" + pool['id']
+        pool_name = "pool-" + member['pool_id']
+        member_name = "member-" + member['id'] + ":" + \
+                      str(member['protocol_port'])
         uri = "{0}{1}{2}/pool/~{3}~{4}/members/~{3}~{5}".format(
             bigip_root, bigip_id, ltm_root, partition, pool_name, member_name)
         self._delete(uri, name="member", resource=member_name)
 
-    def create_health_monitor(self, bigip_id, health_monitor, loadbalancer,
-                              **kwargs):
+    def create_monitor(self, bigip_id, monitor, loadbalancer, **kwargs):
         partition = "loadbalancer-" + loadbalancer['id']
-        monitor_name = "monitor-" + health_monitor['id']
-        uri = "{0}{1}{2}/monitor/http".format(bigip_root, bigip_id, ltm_root)
+        monitor_name = "monitor-" + monitor['id']
+        uri = "{0}{1}{2}/monitor/{3}".format(
+            bigip_root, bigip_id, ltm_root,
+            monitor_path[monitor['type']])
         body = {
             "name": monitor_name,
             "partition": partition
         }
         self._create(uri, body, resource=monitor_name)
 
-    def delete_heath_monitor(self, bigip_id, health_monitor, loadbalancer,
-                             **kwargs):
+    def delete_monitor(self, bigip_id, monitor, loadbalancer, **kwargs):
         partition = "loadbalancer-" + loadbalancer['id']
-        monitor_name = "monitor-" + health_monitor['id']
-        uri = "{0}{1}{2}/monitor/http/~{3}~{4}".format(
-            bigip_root, bigip_id, ltm_root, partition, monitor_name)
+        monitor_name = "monitor-" + monitor['id']
+        uri = "{0}{1}{2}/monitor/{5}/~{3}~{4}".format(
+            bigip_root, bigip_id, ltm_root, partition, monitor_name,
+            monitor_path[monitor['type']])
         self._delete(uri, resource=monitor_name)
